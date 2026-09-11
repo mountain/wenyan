@@ -4,13 +4,13 @@ import {
   Token,
   TokenType,
   RomanizeSystem,
-  ExecuteOptions
+  ExecuteOptions,
 } from "./types";
 import {
   hanzi2num,
   hanzi2numstr,
   num2hanzi,
-  bool2hanzi
+  bool2hanzi,
 } from "./converts/hanzi2num";
 import { hanzi2pinyin } from "./converts/hanzi2pinyin";
 import { bundleImports } from "./reader";
@@ -22,12 +22,61 @@ import { typecheck, printSignature } from "./typecheck";
 import transpilers from "./transpilers";
 import { match, defaultAssert, isRoman } from "./utils";
 import { evalCompiled, isLangSupportedForEval } from "./execute";
+import { analyzeInscription } from "./inscription/analysis";
+import {
+  forwardTriCompute,
+  reverseTriCompute,
+  getReverseProfilePreset,
+} from "./inscription/reverse";
+import {
+  runInscriptionPipeline,
+  INSCRIPTION_EXPERIMENT_WARNING,
+  INSCRIPTION_ACK_REQUIRED_WARNING,
+} from "./inscription/pipeline";
 
 const defaultTrustedHosts = [
-  "https://raw.githubusercontent.com/wenyan-lang/wenyan/master"
+  "https://raw.githubusercontent.com/wenyan-lang/wenyan/master",
 ];
 
 const IGNORE_SYMBOLS = "。、\n\r\t ";
+
+function isNumberChar(ch: string | undefined) {
+  return !!ch && NUMBER_KEYWORDS.includes(ch);
+}
+
+function canStartNumberToken(txt: string, i: number) {
+  const ch = txt[i];
+  if (!isNumberChar(ch)) {
+    return false;
+  }
+  if (ch !== "又") {
+    return true;
+  }
+  const next = txt[i + 1];
+  return isNumberChar(next) && next !== "又";
+}
+
+function hasVisibleSourceText(txt: string) {
+  for (const ch of txt) {
+    if (!IGNORE_SYMBOLS.includes(ch)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function emitPlainTextProgram(txt: string, lang: string) {
+  const lit = JSON.stringify(txt);
+  switch (lang) {
+    case "py":
+      return `print(${lit})`;
+    case "rb":
+      return `puts(${lit})`;
+    case "js":
+    default:
+      return `console.log(${lit});`;
+  }
+}
 
 function wy2tokens(txt: string, assert = defaultAssert()) {
   var tokens: Token[] = [];
@@ -137,7 +186,7 @@ function wy2tokens(txt: string, assert = defaultAssert()) {
             }
           }
           if (!ok) {
-            if (NUMBER_KEYWORDS.includes(txt[i])) {
+            if (canStartNumberToken(txt, i)) {
               num = true;
               tok = txt[i];
             } else {
@@ -257,7 +306,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         values: [],
         names: [],
         public: gettok(i, 1) == "public",
-        pos
+        pos,
       };
       i += 3;
       while (tokens[i] && gettok(i, 0) == "assgn") {
@@ -287,7 +336,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         type: gettok(i + 1, 1),
         values: [tokens[i + 2]],
         public: false,
-        pos
+        pos,
       };
       i += 3;
       if (tokens[i] !== undefined && gettok(i, 0) == "name") {
@@ -304,7 +353,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         type: gettok(i + 3, 1),
         name: tokens[i + 1][1],
         value: tokens[i + 5],
-        pos
+        pos,
       };
       i += 6;
       asc.push(x);
@@ -445,7 +494,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         op: "push",
         container: tokens[i + 1],
         values: [tokens[i + 3]],
-        pos
+        pos,
       };
       i += 4;
       while (tokens[i] && gettok(i, 0) == "opord" && gettok(i, 1) == "l") {
@@ -464,7 +513,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         op: "subscript",
         container: tokens[i + 1],
         value: tokens[i + 3],
-        pos
+        pos,
       };
       asc.push(x);
       i += 4;
@@ -487,7 +536,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         op: ("op" + gettok(i + 3, 1)) as "op+",
         lhs: tokens[i + 1],
         rhs: tokens[i + 2],
-        pos
+        pos,
       };
       asc.push(x);
       i += 4;
@@ -512,7 +561,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
         op: "for",
         container: tokens[i + 1],
         iterator: gettok(i + 3, 1),
-        pos
+        pos,
       };
       i += 4;
       asc.push(x);
@@ -611,7 +660,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
           op: "catcherr",
           error: tokens[i + 1],
           name: gettok(i + 4, 1),
-          pos
+          pos,
         });
         i += 5;
       } else {
@@ -619,7 +668,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
           op: "catcherr",
           error: tokens[i + 1],
           name: undefined,
-          pos
+          pos,
         });
         i += 3;
       }
@@ -629,7 +678,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
           op: "catcherr",
           error: undefined,
           name: gettok(i + 2, 1),
-          pos
+          pos,
         });
         i += 3;
       } else {
@@ -646,7 +695,7 @@ function tokens2asc(tokens: Token[], assert = defaultAssert()) {
           op: "throw",
           error: tokens[i + 1],
           message: tokens[i + 4],
-          pos
+          pos,
         });
         i += 5;
       } else {
@@ -684,7 +733,7 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
     importContext = {},
     allowHttp = false,
     trustedHosts = [],
-    requestTimeout = 2000
+    requestTimeout = 2000,
   } = options;
 
   trustedHosts.push(...defaultTrustedHosts);
@@ -696,7 +745,7 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
     importContext,
     allowHttp,
     trustedHosts,
-    requestTimeout
+    requestTimeout,
   };
 
   if (resetVarCnt) idenMap = {};
@@ -712,9 +761,9 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
       for (var i = 0; i < txtlines.length; i++) {
         l += txtlines[i].length + 1;
         if (l > pos) {
-          errmsg += `Line ${1 + i}, Character ${1 +
-            pos -
-            (l - txtlines[i].length)}:${txtlines[i]}`;
+          errmsg += `Line ${1 + i}, Character ${
+            1 + pos - (l - txtlines[i].length)
+          }:${txtlines[i]}`;
           break;
         }
       }
@@ -732,7 +781,7 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
   var macros = extractMacros(txt, {
     lib,
     lang,
-    importOptions
+    importOptions,
   });
   txt = expandMacros(txt, macros);
 
@@ -753,6 +802,13 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
 
   logCallback("\n\n=== [PASS 2] ABSTRACT SYNTAX CHAIN ===");
   logCallback(asc);
+
+  if (asc.length == 0 && hasVisibleSourceText(txt)) {
+    logCallback("\n\n=== [PASS 3] PLAIN-TEXT FALLBACK ===");
+    const plainTextProgram = emitPlainTextProgram(txt, lang);
+    logCallback(plainTextProgram);
+    return plainTextProgram;
+  }
 
   if (strict) {
     logCallback("\n\n=== [PASS 2.5] TYPECHECK ===");
@@ -777,7 +833,7 @@ function compile(txt: string, options: Partial<CompileOptions> = {}): string {
         ...options,
         entryFilepath: entry,
         resetVarCnt: false,
-        strict: false
+        strict: false,
       });
 
       targ = transpiler.wrapModule(moduleName, compiledModule) + targ;
@@ -811,5 +867,12 @@ export {
   hanzi2pinyin,
   KEYWORDS,
   NUMBER_KEYWORDS,
-  STDLIB
+  STDLIB,
+  analyzeInscription,
+  forwardTriCompute,
+  reverseTriCompute,
+  getReverseProfilePreset,
+  runInscriptionPipeline,
+  INSCRIPTION_EXPERIMENT_WARNING,
+  INSCRIPTION_ACK_REQUIRED_WARNING,
 };
