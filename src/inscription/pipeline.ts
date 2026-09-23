@@ -1,6 +1,8 @@
 import { analyzeInscription, InscriptionAnalysis } from "./analysis";
+import { readRelation } from "./relations";
 import { readChanges } from "./changes";
 import type { ChangesCatalog } from "./changes";
+import type { RelationModel, RelationReading } from "./relations";
 import {
   forwardTriCompute,
   reverseTriCompute,
@@ -41,6 +43,7 @@ export type CoIterationStep = {
 
 export type InscriptionPipelineSuccessResult = {
   changes?: ReturnType<typeof readChanges>;
+  relation?: RelationReading;
   blocked: false;
   entryWarning: string;
   analysis: InscriptionAnalysis;
@@ -73,6 +76,7 @@ export const INSCRIPTION_ACK_REQUIRED_WARNING =
 
 export type InscriptionPipelineOptions = {
   changes?: { catalog: ChangesCatalog };
+  relationModel?: RelationModel;
   steps?: number;
   target?: ReverseTarget;
   optimizer?: {
@@ -303,7 +307,12 @@ export function runInscriptionPipeline(
 
   return {
     blocked: false,
-    ...(options.changes ? { changes: readChanges(txt, options.changes.catalog) } : {}),
+    ...(options.changes
+      ? { changes: readChanges(txt, options.changes.catalog) }
+      : {}),
+    ...(options.relationModel
+      ? { relation: readRelation(txt, options.relationModel) }
+      : {}),
     entryWarning: INSCRIPTION_EXPERIMENT_WARNING,
     analysis,
     forward,
