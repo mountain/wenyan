@@ -23,6 +23,8 @@ import transpilers from "./transpilers";
 import { match, defaultAssert, isRoman } from "./utils";
 import { evalCompiled, isLangSupportedForEval } from "./execute";
 import { analyzeInscription } from "./inscription/analysis";
+import { readChanges, changeLines, lineContext, positionPairings, transformHexagram } from "./inscription/changes";
+import { readSyllogism, judgeSyllogism, encodeMood, decodeMood } from "./inscription/syllogism";
 import {
   forwardTriCompute,
   reverseTriCompute,
@@ -869,6 +871,15 @@ export {
   NUMBER_KEYWORDS,
   STDLIB,
   analyzeInscription,
+  readChanges,
+  changeLines,
+  lineContext,
+  positionPairings,
+  transformHexagram,
+  readSyllogism,
+  judgeSyllogism,
+  encodeMood,
+  decodeMood,
   forwardTriCompute,
   reverseTriCompute,
   getReverseProfilePreset,
