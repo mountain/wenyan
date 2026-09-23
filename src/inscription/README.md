@@ -2,6 +2,10 @@
 
 This folder adds a prose-friendly path for bronze/oracle style input.
 
+The optional [finite changes grammar](CHANGES.md) adds sourced six-line inquiries
+and categorical syllogisms through explicit APIs. Corpus storage and contextual
+learning live in the separate relation-data repository.
+
 ## API
 
 - `analyzeInscription(text)`

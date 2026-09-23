@@ -1,4 +1,6 @@
 import { analyzeInscription, InscriptionAnalysis } from "./analysis";
+import { readChanges } from "./changes";
+import type { ChangesCatalog } from "./changes";
 import {
   forwardTriCompute,
   reverseTriCompute,
@@ -38,6 +40,7 @@ export type CoIterationStep = {
 };
 
 export type InscriptionPipelineSuccessResult = {
+  changes?: ReturnType<typeof readChanges>;
   blocked: false;
   entryWarning: string;
   analysis: InscriptionAnalysis;
@@ -69,6 +72,7 @@ export const INSCRIPTION_ACK_REQUIRED_WARNING =
   "[warning] 请先确认这不是真实故事、只是探索游戏，然后再继续。";
 
 export type InscriptionPipelineOptions = {
+  changes?: { catalog: ChangesCatalog };
   steps?: number;
   target?: ReverseTarget;
   optimizer?: {
@@ -299,6 +303,7 @@ export function runInscriptionPipeline(
 
   return {
     blocked: false,
+    ...(options.changes ? { changes: readChanges(txt, options.changes.catalog) } : {}),
     entryWarning: INSCRIPTION_EXPERIMENT_WARNING,
     analysis,
     forward,
